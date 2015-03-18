@@ -135,7 +135,6 @@ afsmtp_dd_set_from(LogDriver *d, const gchar *phrase, const gchar *mbox)
 
   g_free(self->mail_from->phrase);
   g_free(self->mail_from->address);
-
   self->mail_from->phrase = afsmtp_wash_string(g_strdup(phrase));
   self->mail_from->address = afsmtp_wash_string(g_strdup(mbox));
 }
@@ -229,19 +228,9 @@ afsmtp_dd_format_persist_name(LogThrDestDriver *d)
  */
 
 static void
-afsmtp_dd_msg_add_recipient(AFSMTPRecipient *rcpt, gpointer user_data)
+afsmtp_dd_msg_add_recipient_header(smtp_message_t message, AFSMTPRecipient *rcpt, AFSMTPDriver *self)
 {
-  AFSMTPDriver *self = ((gpointer *)user_data)[0];
-  LogMessage *msg = ((gpointer *)user_data)[1];
-  smtp_message_t message = ((gpointer *)user_data)[2];
-
-  log_template_format(rcpt->addr_tmpl, msg, &self->template_options, LTZ_SEND,
-                      self->super.seq_num, NULL, self->str);
-
-  smtp_add_recipient(message, afsmtp_wash_string (self->str->str));
-
   gchar *hdr;
-
   switch (rcpt->type)
     {
     case AFSMTP_RCPT_TYPE_TO:
@@ -260,6 +249,25 @@ afsmtp_dd_msg_add_recipient(AFSMTPRecipient *rcpt, gpointer user_data)
   smtp_set_header(message, hdr, rcpt->phrase, afsmtp_wash_string (self->str->str));
   smtp_set_header_option(message, hdr, Hdr_OVERRIDE, 1);
 }
+
+static void
+afsmtp_dd_msg_add_recipient_with_template(smtp_message_t message, AFSMTPDriver *self, LogTemplate *addr_tmpl, LogMessage *msg)
+{
+  log_template_format(addr_tmpl, msg, &self->template_options, LTZ_SEND,
+                      self->super.seq_num, NULL, self->str);
+  smtp_add_recipient(message, afsmtp_wash_string (self->str->str));
+}
+
+static void
+afsmtp_dd_msg_add_recipient(AFSMTPRecipient *rcpt, gpointer user_data)
+{
+  AFSMTPDriver *self = ((gpointer *)user_data)[0];
+  LogMessage *msg = ((gpointer *)user_data)[1];
+  smtp_message_t message = ((gpointer *)user_data)[2];
+
+  afsmtp_dd_msg_add_recipient_with_template(message, self, rcpt->addr_tmpl, msg);
+  afsmtp_dd_msg_add_recipient_header(message, rcpt, self);
+ }
 
 static void
 afsmtp_dd_msg_add_header(AFSMTPHeader *hdr, gpointer user_data)
@@ -556,22 +564,7 @@ afsmtp_worker_thread_deinit(LogThrDestDriver *d)
  {
    if (!rcpt->addr_tmpl)
     {
-      gchar *hdr;
-      switch (rcpt->type)
-	{
-	case AFSMTP_RCPT_TYPE_TO:
-	  hdr = "To";
-	  break;
-	case AFSMTP_RCPT_TYPE_CC:
-	  hdr = "Cc";
-	  break;
-	case AFSMTP_RCPT_TYPE_REPLY_TO:
-	  hdr = "Reply-To";
-	  break;
-	default:
-	  return;
-	}
-      rcpt->addr_tmpl = log_template_new(cfg, hdr);
+      rcpt->addr_tmpl = log_template_new(cfg, NULL);
       log_template_compile(rcpt->addr_tmpl, rcpt->address, NULL);
     }
  }
@@ -680,7 +673,7 @@ afsmtp_dd_init(LogPipe *s)
     }
   if (!self->mail_from->addr_tmpl)
     {
-      self->mail_from->addr_tmpl = log_template_new(cfg, "from");
+      self->mail_from->addr_tmpl = log_template_new(cfg, NULL);
       log_template_compile(self->mail_from->addr_tmpl, self->mail_from->address, NULL);
     }
   log_template_options_init(&self->template_options, cfg);
