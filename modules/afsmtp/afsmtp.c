@@ -559,23 +559,31 @@ afsmtp_worker_thread_deinit(LogThrDestDriver *d)
  * Main thread
  */
 
- static void
- afsmtp_dd_init_recipient(AFSMTPRecipient *rcpt, GlobalConfig *cfg)
- {
-   if (!rcpt->addr_tmpl)
+static void
+afsmtp_dd_init_recipient(AFSMTPRecipient *rcpt, gpointer user_data)
+{
+  if (!rcpt->addr_tmpl)
     {
+      GlobalConfig *cfg = ((gpointer *)user_data)[0];
+      gboolean *result = ((gpointer *)user_data)[1];
+
       rcpt->addr_tmpl = log_template_new(cfg, NULL);
-      log_template_compile(rcpt->addr_tmpl, rcpt->address, NULL);
+      if (!log_template_compile(rcpt->addr_tmpl, rcpt->address, NULL))
+	*result = FALSE;
     }
- }
+}
 
 static void
-afsmtp_dd_init_header(AFSMTPHeader *hdr, GlobalConfig *cfg)
+afsmtp_dd_init_header(AFSMTPHeader *hdr, gpointer user_data)
 {
   if (!hdr->value)
     {
+      GlobalConfig *cfg = ((gpointer *)user_data)[0];
+      gboolean *result = ((gpointer *)user_data)[1];
+
       hdr->value = log_template_new(cfg, hdr->name);
-      log_template_compile(hdr->value, hdr->template, NULL);
+      if (!log_template_compile(hdr->value, hdr->template, NULL))
+	*result = FALSE;
     }
 }
 
@@ -658,23 +666,36 @@ afsmtp_dd_init(LogPipe *s)
   if (!__check_required_options(self))
     return FALSE;
 
-  g_list_foreach(self->headers, (GFunc)afsmtp_dd_init_header, cfg);
-  g_list_foreach(self->rcpt_tos, (GFunc)afsmtp_dd_init_recipient, cfg);
+  gboolean result = TRUE;
+  gpointer args[] = { cfg, result };
+  g_list_foreach(self->headers, (GFunc)afsmtp_dd_init_header, args);
+  g_list_foreach(self->rcpt_tos, (GFunc)afsmtp_dd_init_recipient, args);
+  if (!result)
+	return FALSE;
 
   if (!self->subject_tmpl)
     {
       self->subject_tmpl = log_template_new(cfg, "subject");
-      log_template_compile(self->subject_tmpl, self->subject, NULL);
+      if (!log_template_compile(self->subject_tmpl, self->subject, NULL))
+        {
+	  return FALSE;
+        }
     }
   if (!self->body_tmpl)
     {
       self->body_tmpl = log_template_new(cfg, "body");
-      log_template_compile(self->body_tmpl, self->body, NULL);
+      if (!log_template_compile(self->body_tmpl, self->body, NULL))
+        {
+          return FALSE;
+        }
     }
   if (!self->mail_from->addr_tmpl)
     {
       self->mail_from->addr_tmpl = log_template_new(cfg, NULL);
-      log_template_compile(self->mail_from->addr_tmpl, self->mail_from->address, NULL);
+      if (!log_template_compile(self->mail_from->addr_tmpl, self->mail_from->address, NULL))
+        {
+          return FALSE;
+        }
     }
   log_template_options_init(&self->template_options, cfg);
   return log_threaded_dest_driver_start(s);
