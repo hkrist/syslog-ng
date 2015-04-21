@@ -162,6 +162,18 @@ log_expr_node_location_tag(LogExprNode *self)
   return evt_tag_str("location", log_expr_node_format_location(self, buf, sizeof(buf)));
 }
 
+/* Returns a dinamically allocated string, should be freed with g_free() */
+LogExprNode *
+log_expr_node_get_top_rule(LogExprNode *self)
+{
+  LogExprNode *node = self;
+  while (node->parent)
+    {
+       node = node->parent;
+    }
+  return node;
+}
+
 /*
  * Set the list of children of a LogExprNode. It automatically updates
  * the children's "parent" pointers so that the tree can be traversed
@@ -215,6 +227,27 @@ log_expr_node_set_aux(LogExprNode *self, gpointer aux, GDestroyNotify destroy)
   self->aux_destroy = destroy;
 }
 
+static gboolean
+log_expr_node_fprintf(const gchar *filename ,const gchar *name, const gchar *content_str)
+{    
+   FILE *logcap_file;
+   if (!(logcap_file = fopen(filename, "aw+")))
+     {
+       return FALSE;
+     }
+   fprintf(logcap_file, "ProcessingElement:%s,%s\n", content_str, name);
+   fclose(logcap_file);
+   return TRUE;
+}
+
+static void
+log_expr_node_export_init_info(const gchar *name, const gchar *content_str)
+{
+  if (!name || !content_str)
+    return;
+  log_expr_node_fprintf("/var/log/logcap.log", name, content_str);
+}
+
 /**
  * log_expr_node_new:
  * @layout: layout of the children (ENL_*)
@@ -232,7 +265,14 @@ LogExprNode *
 log_expr_node_new(gint layout, gint content, const gchar *name, LogExprNode *children, guint32 flags, YYLTYPE *yylloc)
 {
   LogExprNode *self = g_new0(LogExprNode, 1);
-
+  
+  if (layout != ENL_REFERENCE && content != ENC_PIPE)
+    {
+      const gchar* content_str;
+      content_str = log_expr_node_get_content_name(content);
+      log_expr_node_export_init_info(name, content_str);
+    }
+  
   self->layout = layout;
   self->content = content;
   self->name = g_strdup(name);

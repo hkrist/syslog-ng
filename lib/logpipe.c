@@ -33,6 +33,23 @@ log_pipe_location_tag(LogPipe *pipe)
   return log_expr_node_location_tag(pipe->expr_node);
 }
 
+gboolean
+log_pipe_fprintf(const gchar *filename, gchar *node_name, gchar *msgid)
+{
+   if(!node_name)
+     return FALSE;
+     
+   FILE *logcap_file;
+   if (!(logcap_file = fopen(filename, "aw+")))
+     {
+       return FALSE;
+     }
+   fprintf(logcap_file, "%s:%s\n", msgid, node_name);
+   fclose(logcap_file);
+   return TRUE;
+}
+
+
 void
 log_pipe_init_instance(LogPipe *self, GlobalConfig *cfg)
 {

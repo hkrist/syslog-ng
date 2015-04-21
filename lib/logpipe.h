@@ -231,7 +231,7 @@ struct _LogPipe
 };
 
 extern gboolean (*pipe_single_step_hook)(LogPipe *pipe, LogMessage *msg, const LogPathOptions *path_options);
-
+gboolean log_pipe_fprintf(const gchar *filename, gchar *node_name, gchar *msgid);
 LogPipe *log_pipe_ref(LogPipe *self);
 void log_pipe_unref(LogPipe *self);
 LogPipe *log_pipe_new(GlobalConfig *cfg);
@@ -304,10 +304,32 @@ log_pipe_forward_msg(LogPipe *self, LogMessage *msg, const LogPathOptions *path_
 }
 
 static inline void
+log_pipe_export_queue_info(LogPipe *s, LogMessage *msg)
+{
+  GString *msgid = g_string_new("");
+  LogStamp *stamp;
+  
+  LogExprNode *node = s->expr_node;
+  if (G_UNLIKELY(!node))
+    return;
+    
+  stamp = &msg->timestamps[LM_TS_RECVD];
+  log_stamp_format(stamp, msgid, TS_FMT_UNIX, -1, 0);
+    
+  LogExprNode *top_node = log_expr_node_get_top_rule(node);
+  gchar *top_node_name = top_node->name;
+  
+  log_pipe_fprintf("/var/log/logcap.log", top_node_name, msgid->str);
+  g_string_free(msgid, TRUE);
+}
+
+static inline void
 log_pipe_queue(LogPipe *s, LogMessage *msg, const LogPathOptions *path_options)
 {
   g_assert((s->flags & PIF_INITIALIZED) != 0);
-
+  
+  log_pipe_export_queue_info(s, msg);
+  
   if (G_UNLIKELY(pipe_single_step_hook))
     {
       if (!pipe_single_step_hook(s, msg, path_options))
